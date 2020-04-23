@@ -197,6 +197,10 @@ processors:
       field: "message"
       pattern: "%{event.outcome} %{network.direction} %{network.transport} src %{_temp_.cisco.source_interface}:%{source.address}/%{source.port} %{} dst %{_temp_.cisco.destination_interface}:%{destination.address}/%{destination.port} %{}"
   - dissect:
+      if: "ctx._temp_.cisco.message_id == '106012'"
+      field: "message"
+      pattern: "%{event.outcome} IP from %{source.address} to %{destination.address}%{}"
+  - dissect:
       if: "ctx._temp_.cisco.message_id == '106013'"
       field: "message"
       pattern: "Dropping echo request from %{source.address} to PAT address %{destination.address}"
@@ -430,6 +434,28 @@ processors:
       if: "ctx._temp_.cisco.message_id == '338301'"
       field: "server.port"
       value: "{{source.port}}"
+
+  #
+  # Handle 302xxx messages (Flow Start a.k.a "Built")
+  #
+  - set:
+      if: "[\"302013\", \"302015\", \"302020\"].contains(ctx._temp_.cisco.message_id)"
+      field: "event.action"
+      value: "flow-built"
+  - grok:
+      field: "message"
+      if: "[\"302013\", \"302015\", \"302020\"].contains(ctx._temp_.cisco.message_id)"
+      patterns:
+       - "Built %{NOTSPACE:network.direction} %{NOTSPACE:network.transport} connection %{NOTSPACE:_temp_.cisco.connection_id} for %{NOTSPACE:_temp_.cisco.source_interface}:%{DATA:source.address}/%{NUMBER:source.port:int} \\(%{MAPPEDSOURCE}\\) (?:%{NOTSPACE:_temp_.cisco.source_username} )?to %{NOTCOLON:_temp_.cisco.destination_interface}:%{DATA:destination.address}/%{NUMBER:destination.port:int} \\(%{MAPPEDDESTINATION}\\)%{GREEDYDATA}"
+       - "Built %{NOTSPACE:network.direction} %{NOTSPACE:network.transport} connection for faddr (?:%{NOTCOLON:_temp_.cisco.source_interface}:)?%{ECSSOURCEIPORHOST}/%{NUMBER} (?:%{NOTSPACE:_temp_.cisco.source_username} )?gaddr (?:%{NOTCOLON}:)?%{MAPPEDSRC}/%{NUMBER} laddr (?:%{NOTCOLON:_temp_.cisco.source_interface}:)?%{ECSDESTIPORHOST}/%{NUMBER}(?: %{NOTSPACE:_temp_.cisco.destination_username})? type %{NUMBER:icmp.type} code %{NUMBER:icmp.code}%{GREEDYDATA}"
+      pattern_definitions:
+       NOTCOLON: "[^:]*"
+       ECSSOURCEIPORHOST: "(?:%{IP:source.address}|%{HOSTNAME:source.domain})"
+       ECSDESTIPORHOST: "(?:%{IP:destination.address}|%{HOSTNAME:destination.domain})"
+       MAPPEDSRC: "(?:%{DATA:_temp_.cisco.mapped_source_ip}|%{HOSTNAME})"
+       MAPPEDSOURCE: "(?:%{DATA:_temp_.cisco.mapped_source_ip}/%{NUMBER:_temp_.cisco.mapped_source_port:int})"
+       MAPPEDDESTINATION: "(?:%{DATA:_temp_.cisco.mapped_destination_ip}/%{NUMBER:_temp_.cisco.mapped_destination_port:int})"
+ 
 
   #
   # Handle 302xxx messages (Flow expiration a.k.a "Teardown")
